@@ -1,137 +1,133 @@
-LIBRARY IEEE;
-USE IEEE.NUMERIC_STD.ALL;
-USE IEEE.STD_LOGIC_1164.ALL;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+entity ALU is
+port (
+      A : in signed(15 downto 0);
+      B : in signed(15 downto 0);
+		T1, T2 : in bit;
+      Salu : in bit_vector (4 downto 0);
+		Salu_out : out bit_vector (4 downto 0);
+		Hex : out bit_vector (27 downto 0);
+      LDF : out std_logic;
+      clk : in bit;
+      Y : out signed (15 downto 0);
+      C,Z,S : out std_logic
+		);
+end entity;
+ 
+architecture rtl of ALU is
 
-ENTITY ALU IS
-    PORT (
-        A : IN SIGNED (15 DOWNTO 0);       -- First operand (BB in image)
-        B : IN SIGNED (15 DOWNTO 0);       -- Second operand (BC in image)
-        Salu : IN STD_LOGIC_VECTOR (4 DOWNTO 0); -- 5 bits for operations 0 to 31
-        clk : IN STD_LOGIC;                -- Clock input
-        Y : OUT SIGNED (15 DOWNTO 0);      -- Result output
-        Z : OUT STD_LOGIC;                 -- Zero flag
-        C : BUFFER STD_LOGIC;              -- Carry flag - changed from OUT to BUFFER to allow reading
-        N : OUT STD_LOGIC                  -- Negative flag
-    );
-END ALU;
+function to_7segment(input : signed(3 downto 0)) return BIT_VECTOR is
+        variable segments : BIT_VECTOR(6 downto 0);
+    begin
+        case input is
+            when "0000" => segments := "1000000";  
+            when "0001" => segments := "1111001";  
+            when "0010" => segments := "0100100"; 
+            when "0011" => segments := "0110000";  
+            when "0100" => segments := "0011001"; 
+            when "0101" => segments := "0010010"; 
+            when "0110" => segments := "0000010";  
+            when "0111" => segments := "1111000";  
+            when "1000" => segments := "0000000";  
+            when "1001" => segments := "0010000"; 
+            when "1010" => segments := "0001000";  
+            when "1011" => segments := "0000011";  
+            when "1100" => segments := "1000110"; 
+            when "1101" => segments := "0100001";  
+            when "1110" => segments := "0000110";  
+            when "1111" => segments := "0001110";  
+            when others => segments := "1111111";  
+        end case;
+        return segments;
+    end function;
 
-ARCHITECTURE ALU_Arch OF ALU IS
-    SIGNAL last_res : SIGNED(15 DOWNTO 0) := (OTHERS => '0'); -- For CMP operation
-BEGIN
-    PROCESS (Salu, A, B, clk)
-        VARIABLE res : SIGNED (16 DOWNTO 0); -- Extra bit for carry
-        VARIABLE AA, BB : SIGNED (16 DOWNTO 0); -- Sign extended operands
-        VARIABLE carry_in : SIGNED (16 DOWNTO 0); -- For carry input
-        VARIABLE CF, ZF, NF : STD_LOGIC; -- Carry, Zero, and Negative flags
-    BEGIN
-        -- Sign extension for A and B
-        AA(16) := A(15);
-        AA(15 DOWNTO 0) := A;
-        BB(16) := B(15);
-        BB(15 DOWNTO 0) := B;
-        
-        -- Initialize carry-in based on current carry flag
-        carry_in := (OTHERS => '0');
-        IF C = '1' THEN
-            carry_in(0) := '1';
-        END IF;
-
-        -- Default flag initialization
-        CF := '0';
-        ZF := '0';
-        NF := '0';
-
-        -- Operation selection
-        CASE Salu IS
-            -- Original operations from the blue/yellow image
-            WHEN "00000" => res := BB; -- Y = BB (A in the code)
-            WHEN "00001" => res := AA; -- Y = BC (B in the code)
-            WHEN "00010" => res := BB + AA; -- Y = BB + BC
-            WHEN "00011" => res := BB - AA; -- Y = BB - BC
-            WHEN "00100" => res := BB OR AA; -- Y = BB OR BC
-            WHEN "00101" => res := BB AND AA; -- Y = BB AND BC
-            WHEN "00110" => res := BB XOR AA; -- Y = BB XOR BC
-            WHEN "00111" => res := NOT (BB XOR AA); -- Y = BB XNOR BC
-            WHEN "01000" => res := NOT BB; -- Y = NOT BB
-            WHEN "01001" => res := -BB; -- Y = -BB
-            WHEN "01010" => res := (OTHERS => '0'); -- Y = 0
-            WHEN "01011" => res := BB + AA + carry_in; -- Y = BB + BC + C
-            WHEN "01100" => res := BB - AA - carry_in; -- Y = BB - BC - C
-            WHEN "01101" => res := BB + 1; -- Y = BB + 1
-            WHEN "01110" => res := SHIFT_LEFT(BB, 1); -- Y = BB SHL 1
-            WHEN "01111" => res := SHIFT_RIGHT(BB, 1); -- Y = BB SHR 1
-            
-            -- Additional operations (9 more operations from the list)
-            WHEN "10000" => 
-                -- CMP R, st16 (Compare BB with BC without storing result)
-                res := BB - AA;
-                -- CMP doesn't change Y but sets flags
-            WHEN "10001" => 
-                -- NEG R (Negate BB)
-                res := -BB;
-            WHEN "10010" => 
-                -- INC R (Increment BB)
-                res := BB + 1;
-            WHEN "10011" => 
-                -- DEC R (Decrement BB)
-                res := BB - 1;
-            WHEN "10100" => 
-                -- SHR R (Shift BB right by 1)
-                res := SHIFT_RIGHT(BB, 1);
-            WHEN "10101" => 
-                -- SHL R (Shift BB left by 1)
-                res := SHIFT_LEFT(BB, 1);
-            WHEN "10110" => 
-                -- NOT R (Bitwise NOT of BB)
-                res := NOT BB;
-            WHEN "10111" => 
-                -- NOP (No operation, keep previous value)
-                res(15 DOWNTO 0) := last_res;
-                res(16) := '0';
-            WHEN "11000" => 
-                -- WAIT (No operation, similar to NOP but could be used differently)
-                res(15 DOWNTO 0) := last_res;
-                res(16) := '0';
-            
-            WHEN OTHERS => 
-                res := BB; -- Default
-        END CASE;
-
-        -- Handle special cases for output
-        IF Salu = "10000" THEN
-            -- CMP doesn't update Y
-            Y <= last_res;
-        ELSE
-            -- Update Y for all other operations
-            Y <= res(15 DOWNTO 0);
-            -- Store current result for operations that might need previous value
-            IF rising_edge(clk) THEN
-                last_res <= res(15 DOWNTO 0);
-            END IF;
-        END IF;
-
-        -- Zero flag
-        IF res(15 DOWNTO 0) = x"0000" THEN
-            ZF := '1';
-        ELSE
-            ZF := '0';
-        END IF;
-        Z <= ZF;
-        
-        -- Negative flag
-        NF := res(15);
-        N <= NF;
-
-        -- Update carry flag on rising clock edge
-        IF rising_edge(clk) THEN
-            -- Set carry flag for operations that might generate a carry
-            IF Salu = "00010" OR Salu = "00011" OR Salu = "01011" OR 
-               Salu = "01100" OR Salu = "01101" OR Salu = "01110" OR
-               Salu = "10000" OR Salu = "10010" OR Salu = "10011" OR
-               Salu = "10101" THEN
-                CF := res(16); -- Carry/borrow
-            END IF;
-            C <= CF;
-        END IF;
-    END PROCESS;
-END ALU_Arch;
+begin
+  process (Salu, A, B, clk)
+       variable res, AA, BB,CC: signed (16 downto 0);
+       variable A1, A2,B1, B2: signed (16 downto 0);
+       variable CF,ZF,SF : std_logic;
+		 
+       begin
+			A1 := "00000000000000001";
+			A2 := "01111101111100111";
+			B1 := "00000000000101001";
+			B2 := "01111111111111111";
+			if (T1='1') then 
+				AA := A1;
+				else
+				AA := A2;
+			end if;
+			if (T2='1') then
+				BB := B1;
+				else
+				BB := B2;
+			end if;
+			
+         --AA(16) := A(15);
+         --AA(15 downto 0) := A;
+         --BB(16) := B(15);
+         --BB(15 downto 0) := B;
+			
+         CC(0) := CF;
+         CC(16 downto 1) := "0000000000000000";
+			
+         case Salu is
+             when "00000" => res := AA; 
+             when "00001" => res := BB;
+             when "00010" => res := AA + BB;
+             when "00011" => res := AA - BB;
+             when "00100" => res := AA or BB;
+             when "00101" => res := AA and BB;
+             when "00110" => res := AA xor BB;
+             when "00111" => res := AA xnor BB;
+             when "01000" => res := not AA;
+             when "01001" => res := -AA;
+             when "01010" => res := "00000000000000000";
+             when "01011" => res := AA + BB + CC;
+             when "01100" => res := AA - BB - CC;
+             when "01101" => res := AA + 1;
+             when "01110" => res := AA sll 1;
+				 when "01111" => res := AA srl 1;
+				 when "10000" => res := (AA NAND BB);
+				 when "10001" => res := AA - 1;
+				 when "11010" => res := BB mod AA;
+				 when "10011" => res := BB - 1; 
+				 when "10101" => res := BB; 
+				 when "11000" => res := ROTATE_LEFT(BB,1);  
+				 when "11011" => 
+					  if AA < BB then
+							res := (OTHERS => '1'); 
+					  else
+							res := (OTHERS => '0'); 
+					  end if;
+             when others => res(16) := AA(16);
+             res(15 downto 0) := AA(16 downto 1);
+         end case;
+         Y <= res(15 downto 0);
+         C <= CF; --carry zakres
+         S <= SF; --sign zmiana znaku
+         Z <= ZF; -- zero jesli w wyniku jest zero
+			
+			Salu_out <= Salu;
+			Hex(27 downto 21)<= to_7segment(res(15 downto 12));
+			Hex(20 downto 14)<= to_7segment(res(11 downto 8));
+			Hex(13 downto 7)<= to_7segment(res(7 downto 4));
+			Hex(6 downto 0)<= to_7segment(res(3 downto 0));
+         if (clk'event and clk='1') then
+			--ldf to parzystosc
+             if (res(0)='1') then
+					  LDF <= '1';
+                 if (res = "00000000000000000") then ZF:='1';
+                 else ZF:='0';
+					  LDF <= '0';
+                 end if;
+					  
+             if (res(15)='1') then SF:='1';
+             else SF:='0'; end if;
+             CF := res(16) xor res(15);
+             end if;
+         end if;
+  end process;
+end rtl;
